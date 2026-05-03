@@ -57,27 +57,31 @@ body::after{
 main, header, footer, section, div.toc, div.cover, div.exec-summary, div.part-divider, div.chapter, div.appendix{position:relative;z-index:2}
 
 /* ============== TUFTE-STYLE MARGIN NOTES ============== */
-/* Each first-occurrence glossary term in chapter prose gets its full definition
-   rendered as a sidenote that floats into the left rail of .ch-body. The note
-   sits inline in the HTML right after the bolded term anchor; CSS pushes it left
-   into the rail with a negative margin, and clear:left stacks successive notes
-   so they don't overlap. Hidden on narrower viewports — readers fall back to
-   clicking the term to jump to the appendix glossary entry. */
+/* Two-mode design:
+   1. Default (narrow viewports, before JS, or as fallback): the margin-note renders as a small
+      inline callout block immediately after the bolded term — visible inline in the prose flow.
+   2. Wide viewports (>= 980px): JavaScript repositions notes absolutely into the chapter's
+      left/right rails, alternating sides and stacking with collision detection so they never
+      overlap each other or leave dead space. */
+/* Margin notes are ALWAYS position:absolute. This keeps them out of the prose flow so they
+   never break a paragraph mid-sentence, regardless of where the post-processor inserted them
+   (inside a <p>, inside a <strong>, inside a list item, etc.). They are hidden by default;
+   the JS placement script reveals them only when it has positioned them in a clean rail.
+   Notes that can't fit (narrow viewport, would overlap an iframe, exec-summary rail too thin)
+   simply stay hidden — the bolded gloss-anchor still links to the full glossary entry. */
 .margin-note{
-  float:left;
-  clear:left;
-  width:140px;
-  margin-left:-168px;
-  margin-right:28px;
-  margin-top:6px;
-  margin-bottom:14px;
+  position:absolute;
+  visibility:hidden;
+  width:148px;
   font-family:'Inter Tight',sans-serif;
   font-size:11.5px;
   line-height:1.45;
   color:var(--muted);
+  padding:0 0 0 10px;
   border-left:2px solid var(--rule);
-  padding-left:10px;
+  background:transparent;
   font-style:normal;
+  letter-spacing:0;
 }
 .margin-note .mn-term{
   font-family:'Fraunces',serif;
@@ -85,10 +89,11 @@ main, header, footer, section, div.toc, div.cover, div.exec-summary, div.part-di
   font-weight:500;
   color:var(--ink);
   display:block;
-  margin-bottom:3px;
+  margin-bottom:4px;
   font-size:12.5px;
-  letter-spacing:0;
 }
+.margin-note em{font-style:italic}
+.margin-note.mn-placed{visibility:visible}
 
 /* Bolded first-occurrence anchors — clickable links into the glossary appendix */
 .gloss-anchor{
@@ -100,12 +105,6 @@ main, header, footer, section, div.toc, div.cover, div.exec-summary, div.part-di
   transition:color .12s ease, border-bottom-color .12s ease;
 }
 .gloss-anchor:hover{color:var(--accent); border-bottom-color:var(--accent); border-bottom-style:solid}
-
-/* Hide margin notes on narrower viewports — too narrow for the left rail.
-   Readers can still click the bolded term to jump to the appendix definition. */
-@media (max-width:1280px){
-  .margin-note{display:none}
-}
 
 
 /* ============== MASTHEAD ============== */
@@ -253,7 +252,7 @@ main, header, footer, section, div.toc, div.cover, div.exec-summary, div.part-di
 
 /* ============== TABLE OF CONTENTS ============== */
 .toc{
-  max-width:var(--max-w);
+  max-width:min(1480px, 96vw);
   margin:0 auto;
   padding:80px 32px;
   border-top:1px solid var(--rule);
@@ -283,8 +282,11 @@ main, header, footer, section, div.toc, div.cover, div.exec-summary, div.part-di
 }
 .toc-title em{font-style:italic;color:var(--accent)}
 .toc-list{
-  margin-left:168px;
-  max-width:760px;
+  margin-left:80px;
+  max-width:none;
+  /* extend each row's dotted underline almost to the right gutter — the line is the entry's
+     border-bottom, so a wider entry = a longer line */
+  padding-right:24px;
 }
 .toc-part{
   font-family:'JetBrains Mono',monospace;
@@ -300,7 +302,7 @@ main, header, footer, section, div.toc, div.cover, div.exec-summary, div.part-di
 .toc-part:first-child{margin-top:0}
 .toc-entry{
   display:flex;
-  gap:18px;
+  gap:24px;
   align-items:baseline;
   padding:10px 0;
   border-bottom:1px dotted var(--rule-soft);
@@ -316,12 +318,16 @@ main, header, footer, section, div.toc, div.cover, div.exec-summary, div.part-di
   font-weight:600;
   width:50px;
   flex-shrink:0;
+  /* Override the bleed from the global .ch-num rule (which is intended for chapter heads) */
+  padding-top:0;
+  border-top:none;
 }
 .toc-entry .ch-title{
   font-family:'Fraunces',serif;
   font-size:18px;
   font-weight:400;
   flex:1;
+  line-height:1.3;
 }
 .toc-entry .ch-title em{font-style:italic}
 .toc-entry .ch-page{
@@ -329,6 +335,9 @@ main, header, footer, section, div.toc, div.cover, div.exec-summary, div.part-di
   font-size:10px;
   color:var(--muted);
   letter-spacing:0.1em;
+  flex-shrink:0;
+  width:42px;
+  text-align:right;
 }
 
 /* ============== EXECUTIVE SUMMARY ============== */
@@ -802,24 +811,24 @@ footer.colophon .right{color:var(--muted-soft)}
         <li><a href="#top" data-jump>↑ Top</a></li>
         <li><a href="#exec-summary" data-jump>Executive Summary</a></li>
         <li class="section-divider">Part I · Foundations</li>
-        <li><a href="#ch-1" data-jump>Ch. 1 · Information theory</a></li>
-        <li><a href="#ch-2" data-jump>Ch. 2 · Bayesian ML</a></li>
-        <li><a href="#ch-3" data-jump>Ch. 3 · Imbalanced data</a></li>
-        <li><a href="#ch-4" data-jump>Ch. 4 · Learning from comparisons</a></li>
+        <li><a href="#ch-info-theory" data-jump>Ch. 1 · Information theory</a></li>
+        <li><a href="#ch-bayesian-ml" data-jump>Ch. 2 · Bayesian ML</a></li>
+        <li><a href="#ch-imbalanced" data-jump>Ch. 3 · Imbalanced data</a></li>
+        <li><a href="#ch-comparisons" data-jump>Ch. 4 · Learning from comparisons</a></li>
         <li class="section-divider">Part II · Causal Inference</li>
-        <li><a href="#ch-5" data-jump>Ch. 5 · Price effect</a></li>
-        <li><a href="#ch-6" data-jump>Ch. 6 · Synthetic controls</a></li>
+        <li><a href="#ch-price-effect" data-jump>Ch. 5 · Price effect</a></li>
+        <li><a href="#ch-synthetic-controls" data-jump>Ch. 6 · Synthetic controls</a></li>
         <li class="section-divider">Part III · Recommenders</li>
-        <li><a href="#ch-7" data-jump>Ch. 7 · Collaborative filtering</a></li>
-        <li><a href="#ch-8" data-jump>Ch. 8 · Recommendations (MARS)</a></li>
-        <li><a href="#ch-9" data-jump>Ch. 9 · RecSys evaluation</a></li>
+        <li><a href="#ch-collab-filtering" data-jump>Ch. 7 · Collaborative filtering</a></li>
+        <li><a href="#ch-recommendations" data-jump>Ch. 8 · Recommendations (MARS)</a></li>
+        <li><a href="#ch-recsys-eval" data-jump>Ch. 9 · RecSys evaluation</a></li>
         <li class="section-divider">Part IV · Computer Vision</li>
-        <li><a href="#ch-10" data-jump>Ch. 10 · Object pose estimation</a></li>
-        <li><a href="#ch-11" data-jump>Ch. 11 · Projection mapping</a></li>
-        <li><a href="#ch-12" data-jump>Ch. 12 · Synthetic data</a></li>
-        <li><a href="#ch-13" data-jump>Ch. 13 · Human-in-the-loop CV</a></li>
+        <li><a href="#ch-pose-estimation" data-jump>Ch. 10 · Object pose estimation</a></li>
+        <li><a href="#ch-projection-mapping" data-jump>Ch. 11 · Projection mapping</a></li>
+        <li><a href="#ch-synthetic-data" data-jump>Ch. 12 · Synthetic data</a></li>
+        <li><a href="#ch-hitl-cv" data-jump>Ch. 13 · Human-in-the-loop CV</a></li>
         <li class="section-divider">Part V · Catalog Operations</li>
-        <li><a href="#ch-14" data-jump>Ch. 14 · Product tagging</a></li>
+        <li><a href="#ch-product-tagging" data-jump>Ch. 14 · Product tagging</a></li>
         <li class="section-divider">Part VI · Strategic Synthesis</li>
         <li><a href="#ch-15" data-jump>Ch. 15 · Shape of DS at Wayfair</a></li>
         <li class="section-divider">Part VII · The Lindy Audit</li>
@@ -991,7 +1000,7 @@ footer.colophon .right{color:var(--muted-soft)}
   <div class="body">
     <p class="drop-cap">This guidebook collects nine years of Wayfair's published technical writing — fourteen Explainer-Series articles plus a longitudinal meta-analysis — and reorganizes it as an operational handbook for American Furniture Group. Every original article is embedded in full with all interactive figures functional. Every chapter is preceded by an editorial frame that does three things: states what Wayfair built (in plain language), translates it for AFG's scale, and supplies discussion prompts for the team meeting where this gets reviewed.</p>
 
-    <p>The guidebook is organized into <strong>seven parts</strong>. <em>Part I</em> covers the mathematical foundations every other technique sits on. <em>Part II</em> covers <a class="gloss-anchor" id="first-causal-inference" href="#term-causal-inference">causal inference</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Causal inference</span>Methods for estimating the effect of an intervention from non-experimental data. The thing pricing teams need but rarely build.</aside> and experimentation — the methods that tell you whether anything you ship is actually working. <em>Part III</em> covers recommender systems, including the offline metrics that decide which model gets shipped. <em>Part IV</em> covers computer vision: pose, geometry, simulation, and the human-in-the-loop pattern. <em>Part V</em> covers catalog operations — the unglamorous foundation under everything else. <em>Part VI</em> is the strategic synthesis: the longitudinal shape of what Wayfair has built and the fourteen-initiative AFG roadmap. <em>Part VII</em> is the Lindy audit: a nine-year retrospective separating the patterns that survived the post-2020 frontier from the implementations that didn't, and a revised roadmap that incorporates the audit's findings.</p>
+    <p>The guidebook is organized into <strong>seven parts</strong>. <em>Part I</em> covers the mathematical foundations every other technique sits on. <em>Part II</em> covers <a class="gloss-anchor" id="first-causal-inference" href="#term-causal-inference">causal inference</a><span class="margin-note" data-for="first-causal-inference"><span class="mn-term">Causal inference</span>Methods for estimating the effect of an intervention from non-experimental data. The thing pricing teams need but rarely build.</span> and experimentation — the methods that tell you whether anything you ship is actually working. <em>Part III</em> covers recommender systems, including the offline metrics that decide which model gets shipped. <em>Part IV</em> covers computer vision: pose, geometry, simulation, and the human-in-the-loop pattern. <em>Part V</em> covers catalog operations — the unglamorous foundation under everything else. <em>Part VI</em> is the strategic synthesis: the longitudinal shape of what Wayfair has built and the fourteen-initiative AFG roadmap. <em>Part VII</em> is the Lindy audit: a nine-year retrospective separating the patterns that survived the post-2020 frontier from the implementations that didn't, and a revised roadmap that incorporates the audit's findings.</p>
 
     <p>The single most important observation across the whole corpus is about <em>sequencing</em>. Read the fifteen chapters in order and a clear pattern emerges: the companies that struggle in this space generally try to start from the visible work — the generative-AI room visualizer, the conversational shopping assistant, the transformer recommender — without the search index, the catalog hygiene, or the incrementality measurement underneath. Wayfair's published trajectory, read carefully, is a long argument for the opposite ordering. <strong>Catalog and search first. Platform debt second. Recommender on top of that. Causal inference layered in so you can tell when any of it is working. Generative AI absorbed last, into the parts of the stack where the human cost was already highest.</strong></p>
 
@@ -1001,7 +1010,7 @@ footer.colophon .right{color:var(--muted-soft)}
       <div class="label">Three Questions This Guidebook Should Help Your Team Answer</div>
       <ol>
         <li>What are we building right now that — by Wayfair's own published evidence — is the wrong thing for our scale?</li>
-        <li>Where in our roadmap are we tempted to skip the foundation (catalog hygiene, search relevance, <a class="gloss-anchor" id="first-mlops" href="#term-mlops">MLOps</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">MLOps</span>Operations for ML — pipelines, monitoring, retraining, deployment, observability. The infrastructure layer that's eaten more model-development time than algorithm choice.</aside>) and jump straight to the visible work?</li>
+        <li>Where in our roadmap are we tempted to skip the foundation (catalog hygiene, search relevance, <a class="gloss-anchor" id="first-mlops" href="#term-mlops">MLOps</a><span class="margin-note" data-for="first-mlops"><span class="mn-term">MLOps</span>Operations for ML — pipelines, monitoring, retraining, deployment, observability. The infrastructure layer that's eaten more model-development time than algorithm choice.</span>) and jump straight to the visible work?</li>
         <li>If we adopted the fourteen-initiative roadmap as-is, which of our current commitments would we have to <em>kill</em> to free up the team capacity?</li>
       </ol>
     </div>
@@ -1012,7 +1021,7 @@ footer.colophon .right{color:var(--muted-soft)}
 <section class="part-divider reveal" id="part-1">
   <div class="part-num">Part I</div>
   <h2><em>Foundations</em>.</h2>
-  <p class="part-deck">The mathematical primitives every other technique sits on top of — information theory, <a class="gloss-anchor" id="first-bayesian-inference" href="#term-bayesian-inference">Bayesian inference</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Bayesian inference</span>Updating a probability distribution over hypotheses as data arrives. Gives you calibrated uncertainty — when the model says 80%, you can trust the 80%.</aside>, the rare-event problem, and pairwise learning.</p>
+  <p class="part-deck">The mathematical primitives every other technique sits on top of — information theory, <a class="gloss-anchor" id="first-bayesian-inference" href="#term-bayesian-inference">Bayesian inference</a><span class="margin-note" data-for="first-bayesian-inference"><span class="mn-term">Bayesian inference</span>Updating a probability distribution over hypotheses as data arrives. Gives you calibrated uncertainty — when the model says 80%, you can trust the 80%.</span>, the rare-event problem, and pairwise learning.</p>
 </section>
 
 
@@ -1028,12 +1037,12 @@ footer.colophon .right{color:var(--muted-soft)}
   <div class="ch-body">
     <div class="ch-summary">
       <div class="label">What Wayfair Built</div>
-      <p>Wayfair's piece reframes machine-learning classification through Shannon's lens: a label is just a very short message, and training a model is a question of how short the message can get. <a class="gloss-anchor" id="first-entropy" href="#term-entropy">Entropy</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Entropy</span>The minimum number of bits needed to encode a value drawn from a distribution. The fundamental measure of uncertainty.</aside> measures the information content of the label distribution; <a class="gloss-anchor" id="first-cross-entropy" href="#term-cross-entropy">cross-entropy</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Cross-entropy</span>A loss function that measures the cost (in bits) of describing reality using your model's predicted probabilities. The standard loss for classification.</aside> measures the cost of describing reality using the model's predictions; <a class="gloss-anchor" id="first-kl-divergence" href="#term-kl-divergence">KL divergence</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">KL divergence</span>Kullback-Leibler divergence. The information-theoretic distance between two probability distributions. Cross-entropy minus entropy.</aside> is the gap between the two. Every loss function you've ever optimized is, on this view, a measure of wasted bits.</p>
+      <p>Wayfair's piece reframes machine-learning classification through Shannon's lens: a label is just a very short message, and training a model is a question of how short the message can get. <a class="gloss-anchor" id="first-entropy" href="#term-entropy">Entropy</a><span class="margin-note" data-for="first-entropy"><span class="mn-term">Entropy</span>The minimum number of bits needed to encode a value drawn from a distribution. The fundamental measure of uncertainty.</span> measures the information content of the label distribution; <a class="gloss-anchor" id="first-cross-entropy" href="#term-cross-entropy">cross-entropy</a><span class="margin-note" data-for="first-cross-entropy"><span class="mn-term">Cross-entropy</span>A loss function that measures the cost (in bits) of describing reality using your model's predicted probabilities. The standard loss for classification.</span> measures the cost of describing reality using the model's predictions; <a class="gloss-anchor" id="first-kl-divergence" href="#term-kl-divergence">KL divergence</a><span class="margin-note" data-for="first-kl-divergence"><span class="mn-term">KL divergence</span>Kullback-Leibler divergence. The information-theoretic distance between two probability distributions. Cross-entropy minus entropy.</span> is the gap between the two. Every loss function you've ever optimized is, on this view, a measure of wasted bits.</p>
     </div>
 
     <div class="afg-callout">
       <div class="label">Translation for AFG</div>
-      <p>For an AFG team, this is the lens to evaluate any classification problem in the catalog — product-category prediction, return-likelihood scoring, fraud detection, image-tagging. Before training a model, ask: what is the entropy of the label distribution we're trying to predict? A 50/50 problem has 1 bit of entropy; a 99-class furniture taxonomy where one class accounts for 80% of items has much less. <strong>Practical rule:</strong> if your model accuracy is high but only matches the naive prior, you've learned nothing — measure <a class="gloss-anchor" id="first-information-gain" href="#term-information-gain">information gain</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Information gain</span>The reduction in entropy from learning a feature's value. The right metric to evaluate a classifier against, instead of raw accuracy.</aside>, not raw accuracy. Build dashboards that report cross-entropy loss alongside accuracy on every classifier in production.</p>
+      <p>For an AFG team, this is the lens to evaluate any classification problem in the catalog — product-category prediction, return-likelihood scoring, fraud detection, image-tagging. Before training a model, ask: what is the entropy of the label distribution we're trying to predict? A 50/50 problem has 1 bit of entropy; a 99-class furniture taxonomy where one class accounts for 80% of items has much less. <strong>Practical rule:</strong> if your model accuracy is high but only matches the naive prior, you've learned nothing — measure <a class="gloss-anchor" id="first-information-gain" href="#term-information-gain">information gain</a><span class="margin-note" data-for="first-information-gain"><span class="mn-term">Information gain</span>The reduction in entropy from learning a feature's value. The right metric to evaluate a classifier against, instead of raw accuracy.</span>, not raw accuracy. Build dashboards that report cross-entropy loss alongside accuracy on every classifier in production.</p>
     </div>
 
     <div class="discussion-prompts">
@@ -1117,7 +1126,7 @@ footer.colophon .right{color:var(--muted-soft)}
 
     <div class="afg-callout">
       <div class="label">Translation for AFG</div>
-      <p>Almost every interesting AFG classifier is, at heart, an <a class="gloss-anchor" id="first-imbalanced-data" href="#term-imbalanced-data">imbalanced data</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Imbalanced data</span>A classification problem where one class dominates the dataset. Fraud (0.5%), returns (5%), churn (15%) — almost every interesting business classifier is imbalanced.</aside> problem. The first decision isn't which balancing technique to use — it's <strong>what metric you're actually optimizing</strong>. Returns prediction at 5% base rate? Optimize PR-AUC, not ROC-AUC. Fraud at 0.5%? Use cost-weighted precision-at-k where k is your review-team capacity. Production-grade rule: keep the imbalance in training (don't oversample) but tune the threshold on a held-out validation set — oversampling destroys probability calibration in ways that hurt downstream decision-making.</p>
+      <p>Almost every interesting AFG classifier is, at heart, an <a class="gloss-anchor" id="first-imbalanced-data" href="#term-imbalanced-data">imbalanced data</a><span class="margin-note" data-for="first-imbalanced-data"><span class="mn-term">Imbalanced data</span>A classification problem where one class dominates the dataset. Fraud (0.5%), returns (5%), churn (15%) — almost every interesting business classifier is imbalanced.</span> problem. The first decision isn't which balancing technique to use — it's <strong>what metric you're actually optimizing</strong>. Returns prediction at 5% base rate? Optimize PR-AUC, not ROC-AUC. Fraud at 0.5%? Use cost-weighted precision-at-k where k is your review-team capacity. Production-grade rule: keep the imbalance in training (don't oversample) but tune the threshold on a held-out validation set — oversampling destroys probability calibration in ways that hurt downstream decision-making.</p>
     </div>
 
     <div class="discussion-prompts">
@@ -1203,12 +1212,12 @@ footer.colophon .right{color:var(--muted-soft)}
   <div class="ch-body">
     <div class="ch-summary">
       <div class="label">What Wayfair Built</div>
-      <p>This is the most operationally consequential article in the series. Wayfair walks through four approaches to measuring price elasticity: regression on observational data, <a class="gloss-anchor" id="first-instrumental-variable" href="#term-instrumental-variable">instrumental variables</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Instrumental variable (IV)</span>A variable that affects treatment but doesn't affect the outcome except through treatment. Used to estimate causal effects when randomization isn't available. Hard to find in practice.</aside>, machine learning with partial-dependence and Double-ML, and randomized price experiments analyzed via <a class="gloss-anchor" id="first-difference-in-differences" href="#term-difference-in-differences">difference-in-differences</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Difference-in-differences (DiD)</span>A causal-inference method that compares the change-over-time in a treated group against the change-over-time in a control group. Wayfair's preferred analysis for randomized price experiments.</aside>. Each method makes a different bet about what the confounders are. The honest takeaway: there is no <em>one</em> right method, but there is a wrong one for any given decision.</p>
+      <p>This is the most operationally consequential article in the series. Wayfair walks through four approaches to measuring price elasticity: regression on observational data, <a class="gloss-anchor" id="first-instrumental-variable" href="#term-instrumental-variable">instrumental variables</a><span class="margin-note" data-for="first-instrumental-variable"><span class="mn-term">Instrumental variable (IV)</span>A variable that affects treatment but doesn't affect the outcome except through treatment. Used to estimate causal effects when randomization isn't available. Hard to find in practice.</span>, machine learning with partial-dependence and Double-ML, and randomized price experiments analyzed via <a class="gloss-anchor" id="first-difference-in-differences" href="#term-difference-in-differences">difference-in-differences</a><span class="margin-note" data-for="first-difference-in-differences"><span class="mn-term">Difference-in-differences (DiD)</span>A causal-inference method that compares the change-over-time in a treated group against the change-over-time in a control group. Wayfair's preferred analysis for randomized price experiments.</span>. Each method makes a different bet about what the confounders are. The honest takeaway: there is no <em>one</em> right method, but there is a wrong one for any given decision.</p>
     </div>
 
     <div class="afg-callout">
       <div class="label">Translation for AFG</div>
-      <p>AFG's pricing team likely runs cost-plus or competitor-matching pricing today. The first step toward analytical pricing is <strong>not</strong> machine learning — it is a clean experimental platform that can randomize prices on a small share of traffic. Once you have that, the four methods stack: use observational ML for first-pass elasticity estimates across the catalog, IV when you have a natural instrument (cost shocks, competitor price moves), <a class="gloss-anchor" id="first-propensity-score" href="#term-propensity-score">propensity score</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Propensity score</span>Estimated probability that a customer will take an action. Layer 1 of the standard marketing-ML stack; layer 2 (uplift) is what actually drives spend decisions.</aside> weighting when you can't randomize but have rich covariates, and randomized experiments to validate the highest-impact decisions. The same toolkit extends naturally to marketing-spend questions — <a class="gloss-anchor" id="first-uplift-modeling" href="#term-uplift-modeling">uplift modeling</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Uplift modeling</span>Estimating the <em>causal</em> effect of a treatment (typically marketing) on each customer, rather than just predicting their outcome. pylift and CausalML are the standard libraries.</aside> for incremental-treatment effects, <a class="gloss-anchor" id="first-mmm" href="#term-mmm">MMM</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">MMM</span>Marketing Mix Modeling. Statistical decomposition of marketing spend impact on revenue. 2026 stack: PyMC-Marketing, LightweightMMM, Robyn (Meta), Meridian (Google). Sellforte's October 2025 "Agentic MMM" puts an LLM agent on top of a calibrated MMM model.</aside> for top-down channel attribution. <strong>Order of operations:</strong> experimental infrastructure first, ML second, advanced causal inference third.</p>
+      <p>AFG's pricing team likely runs cost-plus or competitor-matching pricing today. The first step toward analytical pricing is <strong>not</strong> machine learning — it is a clean experimental platform that can randomize prices on a small share of traffic. Once you have that, the four methods stack: use observational ML for first-pass elasticity estimates across the catalog, IV when you have a natural instrument (cost shocks, competitor price moves), <a class="gloss-anchor" id="first-propensity-score" href="#term-propensity-score">propensity score</a><span class="margin-note" data-for="first-propensity-score"><span class="mn-term">Propensity score</span>Estimated probability that a customer will take an action. Layer 1 of the standard marketing-ML stack; layer 2 (uplift) is what actually drives spend decisions.</span> weighting when you can't randomize but have rich covariates, and randomized experiments to validate the highest-impact decisions. The same toolkit extends naturally to marketing-spend questions — <a class="gloss-anchor" id="first-uplift-modeling" href="#term-uplift-modeling">uplift modeling</a><span class="margin-note" data-for="first-uplift-modeling"><span class="mn-term">Uplift modeling</span>Estimating the <em>causal</em> effect of a treatment (typically marketing) on each customer, rather than just predicting their outcome. pylift and CausalML are the standard libraries.</span> for incremental-treatment effects, <a class="gloss-anchor" id="first-mmm" href="#term-mmm">MMM</a><span class="margin-note" data-for="first-mmm"><span class="mn-term">MMM</span>Marketing Mix Modeling. Statistical decomposition of marketing spend impact on revenue. 2026 stack: PyMC-Marketing, LightweightMMM, Robyn (Meta), Meridian (Google). Sellforte's October 2025 "Agentic MMM" puts an LLM agent on top of a calibrated MMM model.</span> for top-down channel attribution. <strong>Order of operations:</strong> experimental infrastructure first, ML second, advanced causal inference third.</p>
     </div>
 
     <div class="discussion-prompts">
@@ -1245,12 +1254,12 @@ footer.colophon .right{color:var(--muted-soft)}
   <div class="ch-body">
     <div class="ch-summary">
       <div class="label">What Wayfair Built</div>
-      <p>The <a class="gloss-anchor" id="first-synthetic-control" href="#term-synthetic-control">synthetic control</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Synthetic control</span>A causal-inference method that builds a weighted combination of untreated units to serve as the counterfactual for a treated unit. The math underneath <a class="gloss-anchor" id="first-geo-experiment" href="#term-geo-experiment">geo-experiments</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Geo-experiment</span>A causal-inference technique that randomizes interventions across geographic units (DMAs, states, regions) when user-level randomization is impossible. The single highest-leverage causal tool for mid-market retailers.</aside>.</aside> method is how you measure the impact of an intervention you can't randomize: a marketing campaign in California, a policy change in one warehouse, a feature rolled out region-by-region. The technique builds a weighted combination of "untreated" units that tracks the treated unit's pre-intervention trajectory, then attributes the post-intervention divergence to the intervention itself. This is the foundation of geo-experiments at Wayfair scale.</p>
+      <p>The <a class="gloss-anchor" id="first-synthetic-control" href="#term-synthetic-control">synthetic control</a><span class="margin-note" data-for="first-synthetic-control"><span class="mn-term">Synthetic control</span>A causal-inference method that builds a weighted combination of untreated units to serve as the counterfactual for a treated unit. The math underneath <a class="gloss-anchor" id="first-geo-experiment" href="#term-geo-experiment">geo-experiments</a><span class="margin-note" data-for="first-geo-experiment"><span class="mn-term">Geo-experiment</span>A causal-inference technique that randomizes interventions across geographic units (DMAs, states, regions) when user-level randomization is impossible. The single highest-leverage causal tool for mid-market retailers.</span>.</span> method is how you measure the impact of an intervention you can't randomize: a marketing campaign in California, a policy change in one warehouse, a feature rolled out region-by-region. The technique builds a weighted combination of "untreated" units that tracks the treated unit's pre-intervention trajectory, then attributes the post-intervention divergence to the intervention itself. This is the foundation of geo-experiments at Wayfair scale.</p>
     </div>
 
     <div class="afg-callout">
       <div class="label">Translation for AFG</div>
-      <p>AFG cannot run user-level <a class="gloss-anchor" id="first-a-b-test" href="#term-a-b-test">A/B tests</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">A/B test</span>Random assignment of users to two versions of a system to causally measure which performs better. Cheap to run on user-level events; expensive when each user only sees one version of furniture (Demeter, geo-experiments are responses to this).</aside> for many interesting interventions — TV campaigns, regional promotions, supplier changes, policy updates. <strong>Build geo-experimentation infrastructure</strong> as one of your first compounding bets. The technical lift is small (Google's <a class="gloss-anchor" id="first-causalimpact" href="#term-causalimpact">CausalImpact</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">CausalImpact</span>Google's open-source R/Python library for synthetic-control-style causal inference on time-series data. Three lines of code to get a usable readout.</aside> library is essentially three lines of R; Meta's GeoLift is similar in Python), and the strategic payoff is huge: every marketing-channel decision becomes measurable, and you can finally retire the last-touch <a class="gloss-anchor" id="first-attribution-model" href="#term-attribution-model">attribution model</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Attribution model</span>A rule for splitting credit for a conversion among the marketing channels that touched the user. Last-touch attribution is the default everywhere and is provably wrong; geo-experiments are the antidote.</aside> that the marketing team has known is wrong for years. Pair geo-experiments with DMA-level KPI rollups in your warehouse and you have a decade-long advantage over peers still litigating channel credit by spreadsheet.</p>
+      <p>AFG cannot run user-level <a class="gloss-anchor" id="first-a-b-test" href="#term-a-b-test">A/B tests</a><span class="margin-note" data-for="first-a-b-test"><span class="mn-term">A/B test</span>Random assignment of users to two versions of a system to causally measure which performs better. Cheap to run on user-level events; expensive when each user only sees one version of furniture (Demeter, geo-experiments are responses to this).</span> for many interesting interventions — TV campaigns, regional promotions, supplier changes, policy updates. <strong>Build geo-experimentation infrastructure</strong> as one of your first compounding bets. The technical lift is small (Google's <a class="gloss-anchor" id="first-causalimpact" href="#term-causalimpact">CausalImpact</a><span class="margin-note" data-for="first-causalimpact"><span class="mn-term">CausalImpact</span>Google's open-source R/Python library for synthetic-control-style causal inference on time-series data. Three lines of code to get a usable readout.</span> library is essentially three lines of R; Meta's GeoLift is similar in Python), and the strategic payoff is huge: every marketing-channel decision becomes measurable, and you can finally retire the last-touch <a class="gloss-anchor" id="first-attribution-model" href="#term-attribution-model">attribution model</a><span class="margin-note" data-for="first-attribution-model"><span class="mn-term">Attribution model</span>A rule for splitting credit for a conversion among the marketing channels that touched the user. Last-touch attribution is the default everywhere and is provably wrong; geo-experiments are the antidote.</span> that the marketing team has known is wrong for years. Pair geo-experiments with DMA-level KPI rollups in your warehouse and you have a decade-long advantage over peers still litigating channel credit by spreadsheet.</p>
     </div>
 
     <div class="discussion-prompts">
@@ -1294,12 +1303,12 @@ footer.colophon .right{color:var(--muted-soft)}
   <div class="ch-body">
     <div class="ch-summary">
       <div class="label">What Wayfair Built</div>
-      <p><a class="gloss-anchor" id="first-collaborative-filtering" href="#term-collaborative-filtering">Collaborative filtering</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Collaborative filtering</span>A recommender pattern that predicts what you'll like from what people-like-you have liked. Foundation of every modern recommender stack.</aside> is the foundational recommender pattern: matrix factorization on a user-item interaction matrix. The radical idea is that the best signal for what you want is what people <em>like you</em> wanted. Wayfair's article walks the user through the dot-product geometry, the <a class="gloss-anchor" id="first-cold-start-problem" href="#term-cold-start-problem">cold-start problem</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Cold-start problem</span>A new user or new item has no interaction history, so collaborative filtering can't recommend for/with them. Solved by content-based features.</aside>, and why pure CF — despite being decades old — is still the workhorse beneath more glamorous transformer-based recommenders.</p>
+      <p><a class="gloss-anchor" id="first-collaborative-filtering" href="#term-collaborative-filtering">Collaborative filtering</a><span class="margin-note" data-for="first-collaborative-filtering"><span class="mn-term">Collaborative filtering</span>A recommender pattern that predicts what you'll like from what people-like-you have liked. Foundation of every modern recommender stack.</span> is the foundational recommender pattern: matrix factorization on a user-item interaction matrix. The radical idea is that the best signal for what you want is what people <em>like you</em> wanted. Wayfair's article walks the user through the dot-product geometry, the <a class="gloss-anchor" id="first-cold-start-problem" href="#term-cold-start-problem">cold-start problem</a><span class="margin-note" data-for="first-cold-start-problem"><span class="mn-term">Cold-start problem</span>A new user or new item has no interaction history, so collaborative filtering can't recommend for/with them. Solved by content-based features.</span>, and why pure CF — despite being decades old — is still the workhorse beneath more glamorous transformer-based recommenders.</p>
     </div>
 
     <div class="afg-callout">
       <div class="label">Translation for AFG</div>
-      <p>For AFG, collaborative filtering is a <strong>two-week first build</strong>, not a research project. Spotify's Implicit library, Microsoft's LightFM, or even raw scipy.sparse + ALS (alternating least squares) on three months of clickstream will produce useful recommendations on day one. Don't start with a <a class="gloss-anchor" id="first-two-tower-model" href="#term-two-tower-model">two-tower model</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Two-tower model</span>A recommender architecture with one neural network for users and one for items, joined at a dot product. The right next step after collaborative filtering.</aside>. Don't start with a <a class="gloss-anchor" id="first-vector-database" href="#term-vector-database">vector database</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Vector database</span>A database optimized for nearest-neighbor search in high-dimensional <a class="gloss-anchor" id="first-embedding" href="#term-embedding">embedding</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Embedding</span>A learned vector representation of a discrete object (word, image, product, user). Two embeddings being close in vector space means the objects are similar.</aside> space. Qdrant, pgvector, Pinecone, Weaviate. Powers visual search and semantic recommendations.</aside>. Start with CF, measure <a class="gloss-anchor" id="first-ndcg" href="#term-ndcg">NDCG</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">NDCG</span>Normalized Discounted Cumulative Gain. The standard offline metric for evaluating recommender and search-ranking systems. Penalizes putting good results lower in the list.</aside> against a popularity baseline, ship it to the homepage carousel, then iterate. Most retailers your size never get past the popularity baseline because they aim too high too early.</p>
+      <p>For AFG, collaborative filtering is a <strong>two-week first build</strong>, not a research project. Spotify's Implicit library, Microsoft's LightFM, or even raw scipy.sparse + ALS (alternating least squares) on three months of clickstream will produce useful recommendations on day one. Don't start with a <a class="gloss-anchor" id="first-two-tower-model" href="#term-two-tower-model">two-tower model</a><span class="margin-note" data-for="first-two-tower-model"><span class="mn-term">Two-tower model</span>A recommender architecture with one neural network for users and one for items, joined at a dot product. The right next step after collaborative filtering.</span>. Don't start with a <a class="gloss-anchor" id="first-vector-database" href="#term-vector-database">vector database</a><span class="margin-note" data-for="first-vector-database"><span class="mn-term">Vector database</span>A database optimized for nearest-neighbor search in high-dimensional <a class="gloss-anchor" id="first-embedding" href="#term-embedding">embedding</a><span class="margin-note" data-for="first-embedding"><span class="mn-term">Embedding</span>A learned vector representation of a discrete object (word, image, product, user). Two embeddings being close in vector space means the objects are similar.</span> space. Qdrant, pgvector, Pinecone, Weaviate. Powers visual search and semantic recommendations.</span>. Start with CF, measure <a class="gloss-anchor" id="first-ndcg" href="#term-ndcg">NDCG</a><span class="margin-note" data-for="first-ndcg"><span class="mn-term">NDCG</span>Normalized Discounted Cumulative Gain. The standard offline metric for evaluating recommender and search-ranking systems. Penalizes putting good results lower in the list.</span> against a popularity baseline, ship it to the homepage carousel, then iterate. Most retailers your size never get past the popularity baseline because they aim too high too early.</p>
     </div>
 
     <div class="discussion-prompts">
@@ -1341,7 +1350,7 @@ footer.colophon .right{color:var(--muted-soft)}
 
     <div class="afg-callout">
       <div class="label">Translation for AFG</div>
-      <p>After AFG ships its CF baseline (Chapter 7), the right next move is <strong>not</strong> a deep transformer — it's adding two layers: a content-based recall channel for new items (using product attributes you already have), and a <a class="gloss-anchor" id="first-learning-to-rank" href="#term-learning-to-rank">learning to rank</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Learning to rank (LTR)</span>ML for ranking problems where the goal is the order of results, not the score of any individual one. Pairwise (<a class="gloss-anchor" id="first-lambdamart" href="#term-lambdamart">LambdaMART</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">LambdaMART</span>A specific <a class="gloss-anchor" id="first-gbdt" href="#term-gbdt">GBDT</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">GBDT</span>Gradient-Boosted Decision Trees. The workhorse algorithm for tabular ML. XGBoost, LightGBM, CatBoost are all implementations. Beats deep learning on structured data more often than people admit.</aside> variant designed for learning-to-rank tasks. The default reranker in pre-deep-learning search and recommendation systems and still extremely competitive.</aside>), pointwise, and listwise variants exist.</aside> (LTR) reranker on top of all retrieval channels. Implement the reranker as a GBDT (LightGBM or XGBoost) over engineered features before reaching for anything neural. This three-layer stack (content + CF + reranker) covers 90% of what Wayfair's <a class="gloss-anchor" id="first-mars" href="#term-mars">MARS</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">MARS</span>Wayfair's Multi-Headed Attention Recommender System (RecSys 2022). A transformer-based sequential recommender. Don't try to build this until your scale justifies it.</aside> transformer does at 5% of the engineering cost. Only consider transformers when your daily session count clears 1M+ and you've exhausted feature engineering on the reranker.</p>
+      <p>After AFG ships its CF baseline (Chapter 7), the right next move is <strong>not</strong> a deep transformer — it's adding two layers: a content-based recall channel for new items (using product attributes you already have), and a <a class="gloss-anchor" id="first-learning-to-rank" href="#term-learning-to-rank">learning to rank</a><span class="margin-note" data-for="first-learning-to-rank"><span class="mn-term">Learning to rank (LTR)</span>ML for ranking problems where the goal is the order of results, not the score of any individual one. Pairwise (<a class="gloss-anchor" id="first-lambdamart" href="#term-lambdamart">LambdaMART</a><span class="margin-note" data-for="first-lambdamart"><span class="mn-term">LambdaMART</span>A specific <a class="gloss-anchor" id="first-gbdt" href="#term-gbdt">GBDT</a><span class="margin-note" data-for="first-gbdt"><span class="mn-term">GBDT</span>Gradient-Boosted Decision Trees. The workhorse algorithm for tabular ML. XGBoost, LightGBM, CatBoost are all implementations. Beats deep learning on structured data more often than people admit.</span> variant designed for learning-to-rank tasks. The default reranker in pre-deep-learning search and recommendation systems and still extremely competitive.</span>), pointwise, and listwise variants exist.</span> (LTR) reranker on top of all retrieval channels. Implement the reranker as a GBDT (LightGBM or XGBoost) over engineered features before reaching for anything neural. This three-layer stack (content + CF + reranker) covers 90% of what Wayfair's <a class="gloss-anchor" id="first-mars" href="#term-mars">MARS</a><span class="margin-note" data-for="first-mars"><span class="mn-term">MARS</span>Wayfair's Multi-Headed Attention Recommender System (RecSys 2022). A transformer-based sequential recommender. Don't try to build this until your scale justifies it.</span> transformer does at 5% of the engineering cost. Only consider transformers when your daily session count clears 1M+ and you've exhausted feature engineering on the reranker.</p>
     </div>
 
     <div class="discussion-prompts">
@@ -1383,7 +1392,7 @@ footer.colophon .right{color:var(--muted-soft)}
 
     <div class="afg-callout">
       <div class="label">Translation for AFG</div>
-      <p>If AFG ships even one recommender, you need an <strong>offline evaluation harness</strong> from day one. NDCG@10 on held-out user sessions is the table-stakes metric. The gotcha: a <a class="gloss-anchor" id="first-temporal-split" href="#term-temporal-split">temporal split</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Temporal split</span>A train/test split by date so the test set is strictly later than training. The correct way to evaluate any time-series or recommender model. Random splits leak future information.</aside> is mandatory — split by date so the test set is strictly later than train. Random splits leak future information and produce metrics that don't survive contact with production. Build the harness before the second model. Without it, your team will ship things that don't help and won't know why.</p>
+      <p>If AFG ships even one recommender, you need an <strong>offline evaluation harness</strong> from day one. NDCG@10 on held-out user sessions is the table-stakes metric. The gotcha: a <a class="gloss-anchor" id="first-temporal-split" href="#term-temporal-split">temporal split</a><span class="margin-note" data-for="first-temporal-split"><span class="mn-term">Temporal split</span>A train/test split by date so the test set is strictly later than training. The correct way to evaluate any time-series or recommender model. Random splits leak future information.</span> is mandatory — split by date so the test set is strictly later than train. Random splits leak future information and produce metrics that don't survive contact with production. Build the harness before the second model. Without it, your team will ship things that don't help and won't know why.</p>
     </div>
 
     <div class="discussion-prompts">
@@ -1427,7 +1436,7 @@ footer.colophon .right{color:var(--muted-soft)}
   <div class="ch-body">
     <div class="ch-summary">
       <div class="label">What Wayfair Built</div>
-      <p>Object <a class="gloss-anchor" id="first-pose-estimation" href="#term-pose-estimation">pose estimation</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Pose estimation</span>Recovering an object's 3D position and orientation from 2D images. The math underneath every AR-furniture-in-your-room experience.</aside> is the problem of recovering an object's 3D position and orientation from a 2D image. Wayfair's article walks through the classic pipeline: detect 2D keypoints, match to known 3D model points, solve the Perspective-n-Point problem with <a class="gloss-anchor" id="first-ransac" href="#term-ransac">RANSAC</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">RANSAC</span>Random Sample Consensus. An algorithm for robust model fitting in the presence of outliers. The "consensus" component of pose-estimation pipelines.</aside>. This is the math underneath every AR-furniture-in-your-room demo and the building block of robotic manipulation.</p>
+      <p>Object <a class="gloss-anchor" id="first-pose-estimation" href="#term-pose-estimation">pose estimation</a><span class="margin-note" data-for="first-pose-estimation"><span class="mn-term">Pose estimation</span>Recovering an object's 3D position and orientation from 2D images. The math underneath every AR-furniture-in-your-room experience.</span> is the problem of recovering an object's 3D position and orientation from a 2D image. Wayfair's article walks through the classic pipeline: detect 2D keypoints, match to known 3D model points, solve the Perspective-n-Point problem with <a class="gloss-anchor" id="first-ransac" href="#term-ransac">RANSAC</a><span class="margin-note" data-for="first-ransac"><span class="mn-term">RANSAC</span>Random Sample Consensus. An algorithm for robust model fitting in the presence of outliers. The "consensus" component of pose-estimation pipelines.</span>. This is the math underneath every AR-furniture-in-your-room demo and the building block of robotic manipulation.</p>
     </div>
 
     <div class="afg-callout">
@@ -1511,7 +1520,7 @@ footer.colophon .right{color:var(--muted-soft)}
   <div class="ch-body">
     <div class="ch-summary">
       <div class="label">What Wayfair Built</div>
-      <p>When real labeled data is scarce, expensive, or unsafe to collect, you simulate. Wayfair's article walks through synthetic-data generation for catalog vision tasks: rendering 3D models with varied lighting, backgrounds, occlusions, and poses to produce millions of perfectly-labeled training images. The trick is the <em><a class="gloss-anchor" id="first-sim-to-real-gap" href="#term-sim-to-real-gap">sim-to-real gap</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Sim-to-real gap</span>The performance drop when a model trained on synthetic data is deployed on real-world data. Closed via domain randomization, sensor-based randomization, and (2024–2026) NVIDIA Cosmos Transfer.</aside></em> — training on <a class="gloss-anchor" id="first-synthetic-data" href="#term-synthetic-data">synthetic data</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Synthetic data</span>Computer-generated training data — typically rendered 3D scenes — used when real labeled data is scarce. The "sim-to-real gap" is the central technical challenge.</aside> and deploying on real photos requires careful domain randomization.</p>
+      <p>When real labeled data is scarce, expensive, or unsafe to collect, you simulate. Wayfair's article walks through synthetic-data generation for catalog vision tasks: rendering 3D models with varied lighting, backgrounds, occlusions, and poses to produce millions of perfectly-labeled training images. The trick is the <em><a class="gloss-anchor" id="first-sim-to-real-gap" href="#term-sim-to-real-gap">sim-to-real gap</a><span class="margin-note" data-for="first-sim-to-real-gap"><span class="mn-term">Sim-to-real gap</span>The performance drop when a model trained on synthetic data is deployed on real-world data. Closed via domain randomization, sensor-based randomization, and (2024–2026) NVIDIA Cosmos Transfer.</span></em> — training on <a class="gloss-anchor" id="first-synthetic-data" href="#term-synthetic-data">synthetic data</a><span class="margin-note" data-for="first-synthetic-data"><span class="mn-term">Synthetic data</span>Computer-generated training data — typically rendered 3D scenes — used when real labeled data is scarce. The "sim-to-real gap" is the central technical challenge.</span> and deploying on real photos requires careful domain randomization.</p>
     </div>
 
     <div class="afg-callout">
@@ -1558,7 +1567,7 @@ footer.colophon .right{color:var(--muted-soft)}
 
     <div class="afg-callout">
       <div class="label">Translation for AFG</div>
-      <p>Any AFG team shipping a vision model must staff a <strong>review loop alongside it</strong> from day one. The cheapest version: 1-2 catalog ops people sample 50-100 model predictions per day, label them, feed corrections back into a retraining queue. Tools: Labelbox, Scale AI, or open-source CVAT for the labeling UI. <a class="gloss-anchor" id="first-snorkel" href="#term-snorkel">Snorkel</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Snorkel</span>A framework for programmatic weak supervision — generating noisy training labels from heuristics, then learning a denoising model on top. Used by Wayfair for catalog tagging across 40M+ products.</aside> for weak-supervision label generation. The mistake to avoid: treating the initial training set as the model's complete diet — that's how you get a model that's 97% accurate at launch and 84% accurate eight months later.</p>
+      <p>Any AFG team shipping a vision model must staff a <strong>review loop alongside it</strong> from day one. The cheapest version: 1-2 catalog ops people sample 50-100 model predictions per day, label them, feed corrections back into a retraining queue. Tools: Labelbox, Scale AI, or open-source CVAT for the labeling UI. <a class="gloss-anchor" id="first-snorkel" href="#term-snorkel">Snorkel</a><span class="margin-note" data-for="first-snorkel"><span class="mn-term">Snorkel</span>A framework for programmatic weak supervision — generating noisy training labels from heuristics, then learning a denoising model on top. Used by Wayfair for catalog tagging across 40M+ products.</span> for weak-supervision label generation. The mistake to avoid: treating the initial training set as the model's complete diet — that's how you get a model that's 97% accurate at launch and 84% accurate eight months later.</p>
     </div>
 
     <div class="discussion-prompts">
@@ -1706,16 +1715,16 @@ footer.colophon .right{color:var(--muted-soft)}
   </div>
 
   <div class="ch-body">
-    <p class="lede">Every chapter so far covered a Wayfair technique on its own terms. This chapter steps back and asks a different question: now that we're four years into the post-2020 frontier — <a class="gloss-anchor" id="first-foundation-model" href="#term-foundation-model">foundation models</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Foundation model</span>A large model trained on broad data that can be adapted to many downstream tasks. The 2026 default starting point for any new ML capability — adapt via prompt → few-shot → <a class="gloss-anchor" id="first-rag" href="#term-rag">RAG</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">RAG</span>Retrieval-Augmented Generation. Pattern where an LLM is given relevant documents at query time so it can answer grounded in real data. The right architecture for a catalog-aware shopping assistant.</aside> → fine-tune (Chip Huyen's order).</aside>, diffusion-based synthetic data, agentic systems, <a class="gloss-anchor" id="first-mcp" href="#term-mcp">MCP</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">MCP</span>Model Context Protocol. Anthropic's late-2024 protocol for letting LLMs interact with external tools and data sources. The single biggest practitioner-acknowledged shift at the AI Engineer World's Fair June 2025; widely adopted within six months.</aside>, evals-as-CI/CD — <em>which</em> of Wayfair's published patterns held up, which got their bottleneck moved somewhere else, and which were quietly replaced? The embedded long-form below is the full audit. Seven interactive figures, drawing on practitioner voices from the AI Engineer World's Fair, Latent Space, Karpathy's Dwarkesh interview, Eugene Yan, Hamel Husain, Shreya Shankar, Simon Willison, and the Shopify Sidekick team's published <a class="gloss-anchor" id="first-cohen-s-kappa" href="#term-cohen-s-kappa">Cohen's Kappa</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Cohen's Kappa</span>Inter-rater agreement metric, ranging from -1 (worse than chance) to 1 (perfect agreement). Used to calibrate <a class="gloss-anchor" id="first-llm-as-judge" href="#term-llm-as-judge">LLM-as-judge</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">LLM-as-judge</span>Using a large language model to label or evaluate data that previously required human annotators. Has cut the cost of search-relevance labeling by 10–100×.</aside> against humans.…</aside> journey.</p>
+    <p class="lede">Every chapter so far covered a Wayfair technique on its own terms. This chapter steps back and asks a different question: now that we're four years into the post-2020 frontier — <a class="gloss-anchor" id="first-foundation-model" href="#term-foundation-model">foundation models</a><span class="margin-note" data-for="first-foundation-model"><span class="mn-term">Foundation model</span>A large model trained on broad data that can be adapted to many downstream tasks. The 2026 default starting point for any new ML capability — adapt via prompt → few-shot → <a class="gloss-anchor" id="first-rag" href="#term-rag">RAG</a><span class="margin-note" data-for="first-rag"><span class="mn-term">RAG</span>Retrieval-Augmented Generation. Pattern where an LLM is given relevant documents at query time so it can answer grounded in real data. The right architecture for a catalog-aware shopping assistant.</span> → fine-tune (Chip Huyen's order).</span>, diffusion-based synthetic data, agentic systems, <a class="gloss-anchor" id="first-mcp" href="#term-mcp">MCP</a><span class="margin-note" data-for="first-mcp"><span class="mn-term">MCP</span>Model Context Protocol. Anthropic's late-2024 protocol for letting LLMs interact with external tools and data sources. The single biggest practitioner-acknowledged shift at the AI Engineer World's Fair June 2025; widely adopted within six months.</span>, evals-as-CI/CD — <em>which</em> of Wayfair's published patterns held up, which got their bottleneck moved somewhere else, and which were quietly replaced? The embedded long-form below is the full audit. Seven interactive figures, drawing on practitioner voices from the AI Engineer World's Fair, Latent Space, Karpathy's Dwarkesh interview, Eugene Yan, Hamel Husain, Shreya Shankar, Simon Willison, and the Shopify Sidekick team's published <a class="gloss-anchor" id="first-cohen-s-kappa" href="#term-cohen-s-kappa">Cohen's Kappa</a><span class="margin-note" data-for="first-cohen-s-kappa"><span class="mn-term">Cohen's Kappa</span>Inter-rater agreement metric, ranging from -1 (worse than chance) to 1 (perfect agreement). Used to calibrate <a class="gloss-anchor" id="first-llm-as-judge" href="#term-llm-as-judge">LLM-as-judge</a><span class="margin-note" data-for="first-llm-as-judge"><span class="mn-term">LLM-as-judge</span>Using a large language model to label or evaluate data that previously required human annotators. Has cut the cost of search-relevance labeling by 10–100×.</span> against humans.…</span> journey.</p>
 
     <div class="ch-summary">
       <div class="label">The Four-Layer Frame</div>
-      <p>The audit organizes Wayfair's corpus by four <em>layers</em>: <strong>Goals</strong> (immortal — relevance, lift, safety), <strong>Disciplines</strong> (durable — A/B test hygiene, eval harnesses, human-in-the-loop), <strong>Methods</strong> (turn over fast — Faster R-CNN, PnP+RANSAC, hand-engineered features), and <strong>Artifacts</strong> (durable only when they encode local truth — <a class="gloss-anchor" id="first-wands" href="#term-wands">WANDS</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">WANDS</span>Wayfair Annotation Dataset for Search — a public benchmark of search-relevance labels released in 2023. The free starting point for any retailer evaluating search quality.</aside>, customer judgments). The <a class="gloss-anchor" id="first-lindy-effect" href="#term-lindy-effect">Lindy effect</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Lindy effect</span>The older an idea is, the longer it's likely to live. Useful when applied at the right layer (goals, disciplines) and misleading when applied at the wrong one (methods, generic artifacts).</aside> — the older a non-perishable idea is, the longer its remaining life expectancy — applies cleanly to the Goals and Disciplines layers, and brutally to the Methods layer. The thesis: <em>the durability of an operating pattern is inversely proportional to how much of it is "the model" and directly proportional to how much of it is the discipline of measurement.</em></p>
+      <p>The audit organizes Wayfair's corpus by four <em>layers</em>: <strong>Goals</strong> (immortal — relevance, lift, safety), <strong>Disciplines</strong> (durable — A/B test hygiene, eval harnesses, human-in-the-loop), <strong>Methods</strong> (turn over fast — Faster R-CNN, PnP+RANSAC, hand-engineered features), and <strong>Artifacts</strong> (durable only when they encode local truth — <a class="gloss-anchor" id="first-wands" href="#term-wands">WANDS</a><span class="margin-note" data-for="first-wands"><span class="mn-term">WANDS</span>Wayfair Annotation Dataset for Search — a public benchmark of search-relevance labels released in 2023. The free starting point for any retailer evaluating search quality.</span>, customer judgments). The <a class="gloss-anchor" id="first-lindy-effect" href="#term-lindy-effect">Lindy effect</a><span class="margin-note" data-for="first-lindy-effect"><span class="mn-term">Lindy effect</span>The older an idea is, the longer it's likely to live. Useful when applied at the right layer (goals, disciplines) and misleading when applied at the wrong one (methods, generic artifacts).</span> — the older a non-perishable idea is, the longer its remaining life expectancy — applies cleanly to the Goals and Disciplines layers, and brutally to the Methods layer. The thesis: <em>the durability of an operating pattern is inversely proportional to how much of it is "the model" and directly proportional to how much of it is the discipline of measurement.</em></p>
     </div>
 
     <div class="afg-callout">
       <div class="label">Why This Chapter Matters For AFG</div>
-      <p>This is the chapter to read <strong>before</strong> any technical-strategy meeting in 2026. The single most actionable insight: any team that built its identity around a <em>specific implementation</em> (a CNN attribute-tagger team, a hand-feature-engineered marketing model team) is structurally exposed; any team that built its identity around a <em>discipline</em> (the eval team, the experimentation platform team) compounds. Two new architectural concepts the chapter introduces and that AFG should adopt as planning vocabulary: <strong><a class="gloss-anchor" id="first-jit-instructions" href="#term-jit-instructions">JIT instructions</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">JIT instructions</span>Just-In-Time instructions — context injected by the platform at inference time, not by the model. The Shopify Sidekick team credited JIT with most of their reliability gains. Platform &gt; model, again.</aside></strong> (the Sidekick framework's just-in-time, platform-injected context that any agent gets at runtime), and Simon Willison's <strong><a class="gloss-anchor" id="first-lethal-trifecta" href="#term-lethal-trifecta">lethal trifecta</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Lethal trifecta</span>Simon Willison's June 2025 framing for any agent that combines (1) access to private data, (2) exposure to untrusted content, and (3) ability to externally communicate. Each pair is fine; all three is exfiltration.…</aside></strong> (private data, untrusted content, external communication — any agent that combines all three is an exfiltration vector). The roadmap chapter that follows (Ch. 17) translates this into specific revisions of the original 14-initiative plan.</p>
+      <p>This is the chapter to read <strong>before</strong> any technical-strategy meeting in 2026. The single most actionable insight: any team that built its identity around a <em>specific implementation</em> (a CNN attribute-tagger team, a hand-feature-engineered marketing model team) is structurally exposed; any team that built its identity around a <em>discipline</em> (the eval team, the experimentation platform team) compounds. Two new architectural concepts the chapter introduces and that AFG should adopt as planning vocabulary: <strong><a class="gloss-anchor" id="first-jit-instructions" href="#term-jit-instructions">JIT instructions</a><span class="margin-note" data-for="first-jit-instructions"><span class="mn-term">JIT instructions</span>Just-In-Time instructions — context injected by the platform at inference time, not by the model. The Shopify Sidekick team credited JIT with most of their reliability gains. Platform &gt; model, again.</span></strong> (the Sidekick framework's just-in-time, platform-injected context that any agent gets at runtime), and Simon Willison's <strong><a class="gloss-anchor" id="first-lethal-trifecta" href="#term-lethal-trifecta">lethal trifecta</a><span class="margin-note" data-for="first-lethal-trifecta"><span class="mn-term">Lethal trifecta</span>Simon Willison's June 2025 framing for any agent that combines (1) access to private data, (2) exposure to untrusted content, and (3) ability to externally communicate. Each pair is fine; all three is exfiltration.…</span></strong> (private data, untrusted content, external communication — any agent that combines all three is an exfiltration vector). The roadmap chapter that follows (Ch. 17) translates this into specific revisions of the original 14-initiative plan.</p>
     </div>
 
     <div class="discussion-prompts">
@@ -1758,9 +1767,9 @@ footer.colophon .right{color:var(--muted-soft)}
     <div class="ch-summary">
       <div class="label">Revisions to the Original 14</div>
       <p><strong>§ B (Search reranker) — bump priority.</strong> The LLM-as-judge pattern collapses the labeling cost asymmetry (Etsy 2025; Eugene Yan, April 2025). Move from Phase 1 mid to Phase 1 first.<br><br>
-      <strong>§ C (LLM catalog enrichment) — already first; expand scope.</strong> The Cornell-Nordstrom 2026 paper and Shopify's 40M-<a class="gloss-anchor" id="first-vlm" href="#term-vlm">VLM</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">VLM</span>Vision-Language Model. Class of multimodal foundation models — GPT-5, Gemini 2.5, Claude Vision, Llama 3.2 Vision, Qwen2-VL, Florence-2, Molmo, NVLM. Has functionally replaced bespoke CNN attribute classifiers for most catalog work.</aside>-calls-per-day pattern both validate this initiative's centrality. Add an explicit "applicability detection" sub-initiative — that's where humans add the most marginal value and where VLMs are weakest.<br><br>
-      <strong>§ E (Starter ML platform) — re-spec.</strong> Original spec was <a class="gloss-anchor" id="first-dbt" href="#term-dbt">dbt</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">dbt</span>"Data Build Tool" — open-source SQL-based transformation framework. The modern foundation of analytics engineering.</aside> + Airflow + <a class="gloss-anchor" id="first-mlflow" href="#term-mlflow">MLflow</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">MLflow</span>Open-source experiment tracking and model registry. The minimum viable ML platform.</aside>. Revised spec adds: an <em>eval harness component from day one</em> (not as a Phase 2 add-on), an MCP-aware tool registry, a <a class="gloss-anchor" id="first-feature-store" href="#term-feature-store">feature store</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Feature store</span>A managed service for shared, versioned ML features that need to be available both offline (for training) and online (for inference) with consistent values. Vertex AI Feature Store, Feast, Tecton.</aside> for offline-online consistency, and a <a class="gloss-anchor" id="first-ground-truth-set" href="#term-ground-truth-set">Ground Truth Set</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">Ground Truth Set (GTX)</span>Shopify Sidekick's term for an evaluation set sampled from real production traces, not curated golden examples. The discipline distinction matters: curated examples produce systems that pass tests but fail in the wild.</aside> sampling pattern from production traces. Don't ship the platform without these four.<br><br>
-      <strong>§ F (Visual search) — revise method.</strong> Original spec said <a class="gloss-anchor" id="first-clip" href="#term-clip">CLIP</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">CLIP</span>Contrastive Language-Image Pretraining. An OpenAI vision-language model that maps images and text into a shared embedding space. The current default for visual search.</aside>-class embeddings. Revised: <a class="gloss-anchor" id="first-siglip" href="#term-siglip">SigLIP</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">SigLIP</span>Google's sigmoid-loss CLIP variant (2023). The practitioner default for new builds in 2025–2026 because of its sigmoid loss, better scaling, and retrieval quality.</aside> for retrieval embeddings, <a class="gloss-anchor" id="first-dinov2" href="#term-dinov2">DINOv2</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">DINOv2</span>Meta's 2023 self-supervised visual foundation model. The default visual backbone in 2025–2026 when text alignment isn't needed (segmentation, pose, fine-grained retrieval). Used as the heart of the December 2024 efficient generative classification pipeline.</aside> as the visual backbone where text alignment isn't needed, <a class="gloss-anchor" id="first-sam-2" href="#term-sam-2">SAM 2</a><aside class="margin-note" aria-hidden="false"><span class="mn-term">SAM 2</span>Meta's Segment Anything Model 2 (2024). Replaces nearly all task-specific segmentation models for catalog work; SAM 2 added video.</aside> for segmentation, vector DB for ANN. The change is small but compounds.<br><br>
+      <strong>§ C (LLM catalog enrichment) — already first; expand scope.</strong> The Cornell-Nordstrom 2026 paper and Shopify's 40M-<a class="gloss-anchor" id="first-vlm" href="#term-vlm">VLM</a><span class="margin-note" data-for="first-vlm"><span class="mn-term">VLM</span>Vision-Language Model. Class of multimodal foundation models — GPT-5, Gemini 2.5, Claude Vision, Llama 3.2 Vision, Qwen2-VL, Florence-2, Molmo, NVLM. Has functionally replaced bespoke CNN attribute classifiers for most catalog work.</span>-calls-per-day pattern both validate this initiative's centrality. Add an explicit "applicability detection" sub-initiative — that's where humans add the most marginal value and where VLMs are weakest.<br><br>
+      <strong>§ E (Starter ML platform) — re-spec.</strong> Original spec was <a class="gloss-anchor" id="first-dbt" href="#term-dbt">dbt</a><span class="margin-note" data-for="first-dbt"><span class="mn-term">dbt</span>"Data Build Tool" — open-source SQL-based transformation framework. The modern foundation of analytics engineering.</span> + Airflow + <a class="gloss-anchor" id="first-mlflow" href="#term-mlflow">MLflow</a><span class="margin-note" data-for="first-mlflow"><span class="mn-term">MLflow</span>Open-source experiment tracking and model registry. The minimum viable ML platform.</span>. Revised spec adds: an <em>eval harness component from day one</em> (not as a Phase 2 add-on), an MCP-aware tool registry, a <a class="gloss-anchor" id="first-feature-store" href="#term-feature-store">feature store</a><span class="margin-note" data-for="first-feature-store"><span class="mn-term">Feature store</span>A managed service for shared, versioned ML features that need to be available both offline (for training) and online (for inference) with consistent values. Vertex AI Feature Store, Feast, Tecton.</span> for offline-online consistency, and a <a class="gloss-anchor" id="first-ground-truth-set" href="#term-ground-truth-set">Ground Truth Set</a><span class="margin-note" data-for="first-ground-truth-set"><span class="mn-term">Ground Truth Set (GTX)</span>Shopify Sidekick's term for an evaluation set sampled from real production traces, not curated golden examples. The discipline distinction matters: curated examples produce systems that pass tests but fail in the wild.</span> sampling pattern from production traces. Don't ship the platform without these four.<br><br>
+      <strong>§ F (Visual search) — revise method.</strong> Original spec said <a class="gloss-anchor" id="first-clip" href="#term-clip">CLIP</a><span class="margin-note" data-for="first-clip"><span class="mn-term">CLIP</span>Contrastive Language-Image Pretraining. An OpenAI vision-language model that maps images and text into a shared embedding space. The current default for visual search.</span>-class embeddings. Revised: <a class="gloss-anchor" id="first-siglip" href="#term-siglip">SigLIP</a><span class="margin-note" data-for="first-siglip"><span class="mn-term">SigLIP</span>Google's sigmoid-loss CLIP variant (2023). The practitioner default for new builds in 2025–2026 because of its sigmoid loss, better scaling, and retrieval quality.</span> for retrieval embeddings, <a class="gloss-anchor" id="first-dinov2" href="#term-dinov2">DINOv2</a><span class="margin-note" data-for="first-dinov2"><span class="mn-term">DINOv2</span>Meta's 2023 self-supervised visual foundation model. The default visual backbone in 2025–2026 when text alignment isn't needed (segmentation, pose, fine-grained retrieval). Used as the heart of the December 2024 efficient generative classification pipeline.</span> as the visual backbone where text alignment isn't needed, <a class="gloss-anchor" id="first-sam-2" href="#term-sam-2">SAM 2</a><span class="margin-note" data-for="first-sam-2"><span class="mn-term">SAM 2</span>Meta's Segment Anything Model 2 (2024). Replaces nearly all task-specific segmentation models for catalog work; SAM 2 added video.</span> for segmentation, vector DB for ANN. The change is small but compounds.<br><br>
       <strong>§ G (Two-tower recommender) — descope partially.</strong> Original spec said two-tower as the next step after CF baseline. With LLM-as-judge offline eval and SigLIP-based item embeddings, the two-tower investment can be deferred. Skip directly from a tuned LambdaMART reranker to a hybrid LLM-RecSys pattern (per Eugene Yan's September 2025 hands-on project) when scale justifies.<br><br>
       <strong>§ I (Decorify-class room generation) — bump priority slightly.</strong> Diffusion-augmentation pipelines (Stable Diffusion 3.5, FLUX, Imagen 3) plus ControlNet make this a six-week build in 2026, not a six-month one. Move from late Phase 2 to mid Phase 2.<br><br>
       <strong>§ L (Conversational LLM assistant) — replace pattern.</strong> Original spec said RAG over catalog. Revised: build the merchant-simulator pattern (per Shopify Sidekick's published architecture) <em>before</em> the assistant ships customer-facing. The simulator is the Phase 2 deliverable; the assistant graduates to customer-facing only after Cohen's Kappa hits 0.5+ against humans.</p>
@@ -1974,6 +1983,158 @@ const lazyIO = new IntersectionObserver((entries)=>{
   });
 },{rootMargin:'600px'});
 document.querySelectorAll('iframe[data-article]').forEach(el=>lazyIO.observe(el));
+
+// ============== MARGIN NOTES (Tufte-style sidenotes) ==============
+// Margin notes start as position:absolute / visibility:hidden, so they're invisible and out
+// of flow regardless of where the post-processor inserted them. This script finds each note's
+// matching anchor by id (data-for), groups notes by their nearest chapter / exec-summary
+// container, and positions them in the left/right rails with collision stacking. A note
+// whose final placement would overlap the article-frame (iframe) is left hidden — the
+// bolded gloss-anchor still links to the full glossary entry, so meaning isn't lost.
+(function(){
+  const MIN_VIEWPORT = 980;
+  const NOTE_WIDTH   = 148;
+  const RAIL_GAP     = 18;   // horizontal gap between margin note and body
+  const STACK_GAP    = 14;   // vertical gap between stacked notes on the same side
+  const SAFE_BUFFER  = 12;   // vertical buffer above article-frame
+
+  function placeMarginNotes(){
+    const notes = document.querySelectorAll('.margin-note');
+
+    // Reset every note to default hidden state.
+    notes.forEach(n => {
+      n.classList.remove('mn-placed','mn-left','mn-right');
+      n.style.cssText = '';
+    });
+    document.querySelectorAll('section.chapter, .exec-summary').forEach(c => {
+      c.style.minHeight = '';
+    });
+
+    if (window.innerWidth < MIN_VIEWPORT) return;
+
+    // Group notes by container; resolve each note's anchor by id (NOT by previousElementSibling,
+    // which is unreliable when the post-processor inserted the note inside <strong>/<p> and the
+    // HTML parser hoisted it out, or when the note sits inside a list item).
+    const containers = new Map();
+    notes.forEach(note => {
+      const anchorId = note.dataset.for;
+      if (!anchorId) return;
+      const anchor = document.getElementById(anchorId);
+      if (!anchor) return;
+      const c = anchor.closest('section.chapter') || anchor.closest('.exec-summary');
+      if (!c) return;
+      if (!containers.has(c)) containers.set(c, []);
+      containers.get(c).push({note, anchor});
+    });
+
+    containers.forEach((items, container) => {
+      // Establish positioning context.
+      if (getComputedStyle(container).position === 'static') {
+        container.style.position = 'relative';
+      }
+
+      const body = container.querySelector(':scope > .ch-body, :scope > .body');
+      if (!body) return;
+
+      const cRect = container.getBoundingClientRect();
+      const bRect = body.getBoundingClientRect();
+
+      // Compute the EFFECTIVE body extents: .article-frame uses negative L/R margins to extend
+      // beyond .ch-body, so a margin note placed against the body's edge would visually overlap
+      // the iframe. Expand the rail boundaries to whichever edges sit furthest out.
+      let extLeft = bRect.left, extRight = bRect.right;
+      body.querySelectorAll('.article-frame').forEach(el => {
+        const r = el.getBoundingClientRect();
+        if (r.left  < extLeft)  extLeft  = r.left;
+        if (r.right > extRight) extRight = r.right;
+      });
+
+      const bodyLeftInC  = extLeft  - cRect.left;
+      const bodyRightInC = extRight - cRect.left;
+      const leftRail  = bodyLeftInC;
+      const rightRail = cRect.width - bodyRightInC;
+
+      const usableLeft  = leftRail  >= (NOTE_WIDTH + RAIL_GAP);
+      const usableRight = rightRail >= (NOTE_WIDTH + RAIL_GAP);
+      if (!usableLeft && !usableRight) return;  // no rail room — leave hidden
+
+      const leftX  = bodyLeftInC  - RAIL_GAP - NOTE_WIDTH;
+      const rightX = bodyRightInC + RAIL_GAP;
+
+      // Don't let any note bottom cross into the article-frame's vertical zone — even if
+      // there's a horizontal rail to its right, the iframe ABOVE it is what causes the visual
+      // collision (the iframe extends wider than ch-body via negative margins).
+      const af = container.querySelector('.article-frame');
+      const safeBottom = af
+        ? (af.getBoundingClientRect().top - cRect.top) - SAFE_BUFFER
+        : Infinity;
+
+      const leftStack = [];
+      const rightStack = [];
+
+      items.forEach(({note, anchor}, i) => {
+        // Choose side: alternate when both rails available; otherwise use whichever has room.
+        let side;
+        if (usableLeft && usableRight) side = (i % 2 === 0) ? 'left' : 'right';
+        else if (usableLeft)           side = 'left';
+        else                           side = 'right';
+
+        const stack = (side === 'left') ? leftStack : rightStack;
+
+        // Reveal & size the note so we can measure its rendered height.
+        note.classList.add('mn-placed', 'mn-' + side);
+        note.style.left = (side === 'left' ? leftX : rightX) + 'px';
+
+        const ar = anchor.getBoundingClientRect();
+        let top = ar.top - cRect.top;
+
+        // Push past prior notes on this side.
+        for (const r of stack) {
+          if (top < r.bottom + STACK_GAP) top = r.bottom + STACK_GAP;
+        }
+        note.style.top = top + 'px';
+
+        const h = note.offsetHeight;
+        const bottom = top + h;
+
+        // If placing this note here would push it into the article-frame's zone, hide it.
+        // The user still has the bolded gloss-anchor link → the glossary entry.
+        if (bottom > safeBottom) {
+          note.classList.remove('mn-placed', 'mn-left', 'mn-right');
+          note.style.cssText = '';
+          return;
+        }
+
+        stack.push({top: top, bottom: bottom});
+      });
+
+      // Ensure the container is tall enough for whatever WAS placed, so notes that extend
+      // past the prose's natural bottom (common in exec-summary or chapters with several
+      // anchors clustered near the end) don't bleed visually into the next section.
+      const allBottoms = leftStack.concat(rightStack).map(r => r.bottom);
+      if (allBottoms.length){
+        const lowest = Math.max.apply(null, allBottoms);
+        const naturalH = container.offsetHeight;
+        if (lowest + 32 > naturalH){
+          container.style.minHeight = (lowest + 32) + 'px';
+        }
+      }
+    });
+  }
+
+  // Run on load (small delay for fonts/iframes to settle), then once more after iframe heights
+  // typically resolve, and on resize.
+  if (document.readyState === 'complete') setTimeout(placeMarginNotes, 120);
+  else window.addEventListener('load', () => setTimeout(placeMarginNotes, 120));
+  setTimeout(placeMarginNotes, 800);
+  setTimeout(placeMarginNotes, 2200);
+
+  let resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(placeMarginNotes, 120);
+  });
+})();
 </script>
 </body>
 </html>
