@@ -2,5 +2,5 @@
 Curated for American Furniture Group operations.
 
 **Sources:**
-https://www.youtube.com/@wayfairdatascience7894
-https://www.aboutwayfair.com/careers/tech-blog
+- https://www.youtube.com/@wayfairdatascience7894
+- https://www.aboutwayfair.com/careers/tech-blog
